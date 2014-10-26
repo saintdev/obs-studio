@@ -21,9 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "pulse-wrapper.h"
 
-#define NSEC_PER_SEC  1000000000LL
-#define NSEC_PER_MSEC 1000000L
-
 #define PULSE_DATA(voidptr) struct pulse_data *data = voidptr;
 #define blog(level, msg, ...) blog(level, "pulse-input: " msg, ##__VA_ARGS__)
 
@@ -66,42 +63,6 @@ static enum audio_format pulse_to_obs_audio_format(
 	return AUDIO_FORMAT_UNKNOWN;
 }
 
-/**
- * Get obs speaker layout from number of channels
- *
- * @param channels number of channels reported by pulseaudio
- *
- * @return obs speaker_layout id
- *
- * @note This *might* not work for some rather unusual setups, but should work
- *       fine for the majority of cases.
- */
-static enum speaker_layout pulse_channels_to_obs_speakers(
-	uint_fast32_t channels)
-{
-	switch(channels) {
-	case 1: return SPEAKERS_MONO;
-	case 2: return SPEAKERS_STEREO;
-	case 3: return SPEAKERS_2POINT1;
-	case 4: return SPEAKERS_SURROUND;
-	case 5: return SPEAKERS_4POINT1;
-	case 6: return SPEAKERS_5POINT1;
-	case 8: return SPEAKERS_7POINT1;
-	}
-
-	return SPEAKERS_UNKNOWN;
-}
-
-static inline uint64_t samples_to_ns(size_t frames, uint_fast32_t rate)
-{
-	return frames * NSEC_PER_SEC / rate;
-}
-
-static inline uint64_t get_sample_time(size_t frames, uint_fast32_t rate)
-{
-	return os_gettime_ns() - samples_to_ns(frames, rate);
-}
-
 #define STARTUP_TIMEOUT_NS (500 * NSEC_PER_MSEC)
 
 /**
@@ -140,8 +101,8 @@ static void pulse_stream_read(pa_stream *p, size_t nbytes, void *userdata)
 	out.format          = pulse_to_obs_audio_format(data->format);
 	out.data[0]         = (uint8_t *) frames;
 	out.frames          = bytes / data->bytes_per_frame;
-	out.timestamp       = get_sample_time(out.frames,
-	                                      out.samples_per_sec);
+	out.timestamp       = get_audio_sample_time(out.frames,
+	                                            out.samples_per_sec);
 
 	if (!data->first_ts)
 		data->first_ts = out.timestamp + STARTUP_TIMEOUT_NS;
@@ -203,7 +164,7 @@ static void pulse_source_info(pa_context *c, const pa_source_info *i, int eol,
 	}
 
 	uint8_t channels = i->sample_spec.channels;
-	if (pulse_channels_to_obs_speakers(channels) == SPEAKERS_UNKNOWN) {
+	if (get_speaker_layout(channels) == SPEAKERS_UNKNOWN) {
 		channels = 2;
 
 		blog(LOG_INFO, "%c channels not supported by OBS,"
@@ -253,7 +214,7 @@ static int_fast32_t pulse_start_recording(struct pulse_data *data)
 		return -1;
 	}
 
-	data->speakers = pulse_channels_to_obs_speakers(spec.channels);
+	data->speakers = get_speaker_layout(spec.channels);
 	data->bytes_per_frame = pa_frame_size(&spec);
 
 	data->stream = pulse_stream_new(obs_source_get_name(data->source),

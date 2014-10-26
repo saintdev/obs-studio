@@ -19,6 +19,7 @@
 
 #include "media-io-defs.h"
 #include "../util/c99defs.h"
+#include "../util/platform.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,6 +104,31 @@ static inline uint32_t get_audio_channels(enum speaker_layout speakers)
 	return 0;
 }
 
+/**
+ * Get obs speaker layout from number of channels
+ *
+ * @param channels number of channels
+ *
+ * @return obs speaker_layout id
+ *
+ * @note This *might* not work for some rather unusual setups, but should work
+ *       fine for the majority of cases.
+ */
+static enum speaker_layout get_speaker_layout(uint32_t channels)
+{
+	switch(channels) {
+	case 1: return SPEAKERS_MONO;
+	case 2: return SPEAKERS_STEREO;
+	case 3: return SPEAKERS_2POINT1;
+	case 4: return SPEAKERS_SURROUND;
+	case 5: return SPEAKERS_4POINT1;
+	case 6: return SPEAKERS_5POINT1;
+	case 8: return SPEAKERS_7POINT1;
+	}
+
+	return SPEAKERS_UNKNOWN;
+}
+
 static inline size_t get_audio_bytes_per_channel(enum audio_format format)
 {
 	switch (format) {
@@ -163,6 +189,19 @@ static inline size_t get_audio_size(enum audio_format format,
 	return (planar ? 1 : get_audio_channels(speakers)) *
 	       get_audio_bytes_per_channel(format) *
 	       frames;
+}
+
+#define NSEC_PER_SEC  1000000000LL
+#define NSEC_PER_MSEC 1000000L
+
+static inline uint64_t audio_samples_to_ns(size_t frames, uint_fast32_t rate)
+{
+	return frames * NSEC_PER_SEC / rate;
+}
+
+static inline uint64_t get_audio_sample_time(size_t frames, uint_fast32_t rate)
+{
+	return os_gettime_ns() - audio_samples_to_ns(frames, rate);
 }
 
 #define AUDIO_OUTPUT_SUCCESS       0
