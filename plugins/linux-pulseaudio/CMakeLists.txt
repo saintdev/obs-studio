@@ -5,7 +5,7 @@ if(DISABLE_PULSEAUDIO)
 	return()
 endif()
 
-find_package(PulseAudio)
+find_package(PulseAudio QUIET)
 if(NOT PULSEAUDIO_FOUND AND ENABLE_PULSEAUDIO)
 	message(FATAL_ERROR "PulseAudio not found but set as enabled")
 elseif(NOT PULSEAUDIO_FOUND)
