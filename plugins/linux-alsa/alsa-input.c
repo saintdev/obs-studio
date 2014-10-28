@@ -66,10 +66,10 @@ static inline enum audio_format alsa_to_obs_audio_format(
 	snd_pcm_format_t format)
 {
 	switch (format) {
-	case SND_PCM_FORMAT_U8:       return AUDIO_FORMAT_U8BIT;
-	case SND_PCM_FORMAT_S16_LE:   return AUDIO_FORMAT_16BIT;
-	case SND_PCM_FORMAT_S32_LE:   return AUDIO_FORMAT_32BIT;
-	case SND_PCM_FORMAT_FLOAT_LE: return AUDIO_FORMAT_FLOAT;
+	case SND_PCM_FORMAT_U8:       return AUDIO_FORMAT_U8BIT_PLANAR;
+	case SND_PCM_FORMAT_S16_LE:   return AUDIO_FORMAT_16BIT_PLANAR;
+	case SND_PCM_FORMAT_S32_LE:   return AUDIO_FORMAT_32BIT_PLANAR;
+	case SND_PCM_FORMAT_FLOAT_LE: return AUDIO_FORMAT_FLOAT_PLANAR;
 	default:                      return AUDIO_FORMAT_UNKNOWN;
 	}
 
@@ -233,12 +233,13 @@ static void *alsa_thread(void *vptr)
 	obs_audio.speakers        = get_speaker_layout(data->channels);
 	obs_audio.samples_per_sec = data->sample_rate;
 	obs_audio.format          = alsa_to_obs_audio_format(data->format);
-	obs_audio.data[0]         = audio;
+	for (int ch = 0; ch < data->channels; ch++)
+		obs_audio.data[ch] = audio + channel_size * ch;
 
 	while (os_event_try(data->event) == EAGAIN) {
 		snd_pcm_sframes_t frames, delay = 0;
 
-		while ((frames = snd_pcm_readi(data->pcm, audio, data->period_size)) < 0) {
+		while ((frames = snd_pcm_readn(data->pcm, (void **)obs_audio.data, data->period_size)) < 0) {
 			if (frames == -EPIPE)
 				blog(LOG_WARNING, "XRUN occurred!");
 			else if (frames == -ESTRPIPE)
@@ -282,7 +283,7 @@ int alsa_set_hwparams(snd_pcm_t *pcm, struct alsa_data *data)
 
 	ret = snd_pcm_hw_params_any(pcm, params);
 	CHECK_RETURN("No hwparams available");
-	ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+	ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_NONINTERLEAVED);
 	CHECK_RETURN("Unable to set access type");
 	ret = snd_pcm_hw_params_set_format(pcm, params, data->format);
 	CHECK_RETURN("Unable to set PCM format");
