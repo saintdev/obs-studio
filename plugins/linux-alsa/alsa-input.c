@@ -258,7 +258,7 @@ static void *alsa_thread(void *vptr)
 				break;
 
 		while (count > 0) {
-			frames = snd_pcm_readn(data->pcm, (void **)obs_audio.data, count);
+			frames = snd_pcm_mmap_readn(data->pcm, (void **)obs_audio.data, count);
 
 			if (frames == -EAGAIN)
 				continue;
@@ -295,7 +295,7 @@ int alsa_set_hwparams(snd_pcm_t *pcm, struct alsa_data *data)
 
 	ret = snd_pcm_hw_params_any(pcm, params);
 	CHECK_RETURN("No hwparams available");
-	ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_RW_NONINTERLEAVED);
+	ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_MMAP_NONINTERLEAVED);
 	CHECK_RETURN("Unable to set access type");
 	ret = snd_pcm_hw_params_set_format(pcm, params, data->format);
 	CHECK_RETURN("Unable to set PCM format");
