@@ -144,7 +144,7 @@ static void alsa_device_list(obs_property_t *prop)
 			card_name = snd_ctl_card_info_get_name(card_info);
 			pcm_name = snd_pcm_info_get_name(pcm_info);
 			snprintf(device_str, sizeof(device_str),
-				"hw:%i,%i", card, device);
+				"plughw:%i,%i", card, device);
 
 			description = bzalloc(strlen(card_name) +
 				strlen(pcm_name) + strlen(device_str) + 10);
@@ -222,49 +222,61 @@ static void alsa_terminate(struct alsa_data *data)
 	}
 }
 
+#define MSEC_PER_SEC 1000
 static void *alsa_thread(void *vptr)
 {
 	ALSA_DATA(vptr);
 	void *audio;
 	struct obs_source_audio obs_audio;
-	size_t channel_size = snd_pcm_format_width(data->format) / 8 * data->period_size;
-	audio = bzalloc(channel_size * data->channels);
+	size_t bytes_per_period = snd_pcm_format_width(data->format) / 8 * data->period_size;
+	audio = bzalloc(bytes_per_period * data->channels);
+	int ret;
+
+	if ((ret = snd_pcm_start(data->pcm)) < 0) {
+		blog(LOG_ERROR, "Not able to start PCM: %s",
+			snd_strerror(ret));
+		return NULL;
+	}
 
 	obs_audio.speakers        = get_speaker_layout(data->channels);
 	obs_audio.samples_per_sec = data->sample_rate;
 	obs_audio.format          = alsa_to_obs_audio_format(data->format);
 	for (int ch = 0; ch < data->channels; ch++)
-		obs_audio.data[ch] = audio + channel_size * ch;
+		obs_audio.data[ch] = audio + bytes_per_period * ch;
 
 	while (os_event_try(data->event) == EAGAIN) {
 		snd_pcm_sframes_t frames, delay = 0;
+		snd_pcm_uframes_t count = data->period_size;
 
-		while ((frames = snd_pcm_readn(data->pcm, (void **)obs_audio.data, data->period_size)) < 0) {
-			if (frames == -EPIPE)
-				blog(LOG_WARNING, "XRUN occurred!");
-			else if (frames == -ESTRPIPE)
-				blog(LOG_WARNING, "Handling suspend event.");
-			else if (frames == -EBADFD) {
-				blog(LOG_ERROR, "PCM not in correct state (%s)",
-					snd_strerror(frames));
-				goto exit;
-			}
-			else {
-				blog(LOG_ERROR, "Unhandled error reading audio: %s",
-					snd_strerror(frames));
-				goto exit;
-			}
+		ret = snd_pcm_wait(data->pcm, MSEC_PER_SEC);
+
+		if (!ret || ret == -EAGAIN)
+			continue;
+
+		if (ret < 0)
 			if (alsa_handle_xrun(data->pcm) < 0)
-				goto exit;
+				break;
+
+		while (count > 0) {
+			frames = snd_pcm_readn(data->pcm, (void **)obs_audio.data, count);
+
+			if (frames == -EAGAIN)
+				continue;
+			if (frames < 0)
+				if (alsa_handle_xrun(data->pcm) < 0)
+					goto exit;
+
+			snd_pcm_delay(data->pcm, &delay);
+
+			obs_audio.frames    = frames;
+			obs_audio.timestamp = get_audio_sample_time(frames + delay,
+								    data->sample_rate);
+
+			obs_source_output_audio(data->source, &obs_audio);
+
+			count -= frames;
 		}
 
-		snd_pcm_delay(data->pcm, &delay);
-
-		obs_audio.frames    = frames;
-		obs_audio.timestamp = get_audio_sample_time(frames + delay,
-							    data->sample_rate);
-
-		obs_source_output_audio(data->source, &obs_audio);
 	}
 
 exit:
@@ -318,7 +330,7 @@ static bool alsa_init(struct alsa_data *data)
 
 	/* Initialize and start thread */
 	blog(LOG_INFO, "Attempting to open PCM (%s)", data->device);
-	ret = snd_pcm_open(&data->pcm, data->device, SND_PCM_STREAM_CAPTURE, 0);
+	ret = snd_pcm_open(&data->pcm, data->device, SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
 	if (ret < 0) {
 		blog(LOG_ERROR, "Unable to open PCM: %s",
 			snd_strerror(ret));
