@@ -133,8 +133,8 @@ static void alsa_device_list(obs_property_t *prop)
 				 "plughw:%i,%i", card, device);
 
 			description = bzalloc(strlen(card_name) +
-						  strlen(pcm_name) +
-						  strlen(device_str) + 10);
+						strlen(pcm_name) +
+						strlen(device_str) + 10);
 
 			sprintf(description, "%s (%s, %s)",
 				device_str, card_name, pcm_name);
@@ -154,10 +154,10 @@ static obs_properties_t *alsa_properties(void *unused)
 
 	obs_properties_t *props = obs_properties_create();
 	obs_property_t *devices = obs_properties_add_list(props,
-				    "pcm_name",
-				    obs_module_text("Device"),
-				    OBS_COMBO_TYPE_LIST,
-				    OBS_COMBO_FORMAT_STRING);
+							  "pcm_name",
+							  obs_module_text("Device"),
+							  OBS_COMBO_TYPE_LIST,
+							  OBS_COMBO_FORMAT_STRING);
 	obs_properties_add_bool(props, "force_mono",
 				obs_module_text("Force Mono"));
 
@@ -261,7 +261,7 @@ static void *alsa_thread(void *vptr)
 				int stride = areas[ch].step / 8;
 
 				obs_audio.data[ch] = areas[ch].addr + first +
-							 offset * stride;
+							offset * stride;
 			}
 			obs_source_output_audio(data->source, &obs_audio);
 
