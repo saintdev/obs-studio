@@ -38,9 +38,6 @@ do { \
 } while(0)
 
 /* TODO:
- * Non blocking mode?
- * MMAP access?
- *     Not all drivers support MMAP.
  * Configurable sample rate/channels/etc..
  */
 
@@ -226,10 +223,7 @@ static void alsa_terminate(struct alsa_data *data)
 static void *alsa_thread(void *vptr)
 {
 	ALSA_DATA(vptr);
-	void *audio;
 	struct obs_source_audio obs_audio;
-	size_t bytes_per_period = snd_pcm_format_width(data->format) / 8 * data->period_size;
-	audio = bzalloc(bytes_per_period * data->channels);
 	int ret;
 
 	if ((ret = snd_pcm_start(data->pcm)) < 0) {
@@ -241,12 +235,10 @@ static void *alsa_thread(void *vptr)
 	obs_audio.speakers        = get_speaker_layout(data->channels);
 	obs_audio.samples_per_sec = data->sample_rate;
 	obs_audio.format          = alsa_to_obs_audio_format(data->format);
-	for (int ch = 0; ch < data->channels; ch++)
-		obs_audio.data[ch] = audio + bytes_per_period * ch;
 
 	while (os_event_try(data->event) == EAGAIN) {
-		snd_pcm_sframes_t frames, delay = 0;
 		snd_pcm_uframes_t count = data->period_size;
+		snd_pcm_sframes_t delay, available;
 
 		ret = snd_pcm_wait(data->pcm, MSEC_PER_SEC);
 
@@ -257,30 +249,36 @@ static void *alsa_thread(void *vptr)
 			if (alsa_handle_xrun(data->pcm) < 0)
 				break;
 
+		available = snd_pcm_avail_update(data->pcm);
+		if (available < data->period_size)
+			continue;
+
+		snd_pcm_delay(data->pcm, &delay);
+
 		while (count > 0) {
-			frames = snd_pcm_mmap_readn(data->pcm, (void **)obs_audio.data, count);
+			snd_pcm_uframes_t offset, frames = count;
+			const snd_pcm_channel_area_t *areas;
 
-			if (frames == -EAGAIN)
-				continue;
-			if (frames < 0)
-				if (alsa_handle_xrun(data->pcm) < 0)
-					goto exit;
-
-			snd_pcm_delay(data->pcm, &delay);
+			snd_pcm_mmap_begin(data->pcm, &areas, &offset, &frames);
 
 			obs_audio.frames    = frames;
 			obs_audio.timestamp = get_audio_sample_time(frames + delay,
 								    data->sample_rate);
+			for (int ch = 0; ch < data->channels; ch++) {
+				int first = areas[ch].first / 8;
+				int stride = areas[ch].step / 8;
 
+				obs_audio.data[ch] = areas[ch].addr + first + offset * stride;
+			}
 			obs_source_output_audio(data->source, &obs_audio);
+
+			snd_pcm_mmap_commit(data->pcm, offset, frames);
 
 			count -= frames;
 		}
 
 	}
 
-exit:
-	bfree(audio);
 	return NULL;
 }
 
