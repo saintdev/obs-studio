@@ -63,17 +63,22 @@ static inline enum audio_format alsa_to_obs_audio_format(
 	snd_pcm_format_t format)
 {
 	switch (format) {
-	case SND_PCM_FORMAT_U8:       return AUDIO_FORMAT_U8BIT_PLANAR;
-	case SND_PCM_FORMAT_S16_LE:   return AUDIO_FORMAT_16BIT_PLANAR;
-	case SND_PCM_FORMAT_S32_LE:   return AUDIO_FORMAT_32BIT_PLANAR;
-	case SND_PCM_FORMAT_FLOAT_LE: return AUDIO_FORMAT_FLOAT_PLANAR;
-	default:                      return AUDIO_FORMAT_UNKNOWN;
+	case SND_PCM_FORMAT_U8:
+		return AUDIO_FORMAT_U8BIT_PLANAR;
+	case SND_PCM_FORMAT_S16_LE:
+		return AUDIO_FORMAT_16BIT_PLANAR;
+	case SND_PCM_FORMAT_S32_LE:
+		return AUDIO_FORMAT_32BIT_PLANAR;
+	case SND_PCM_FORMAT_FLOAT_LE:
+		return AUDIO_FORMAT_FLOAT_PLANAR;
+	default:
+		return AUDIO_FORMAT_UNKNOWN;
 	}
 
 	return AUDIO_FORMAT_UNKNOWN;
 }
 
-static const char* alsa_getname(void)
+static const char *alsa_getname(void)
 {
 	return obs_module_text("ALSA Input");
 }
@@ -115,7 +120,7 @@ static void alsa_device_list(obs_property_t *prop)
 
 		if ((ret = snd_ctl_card_info(card_ctl, card_info))) {
 			blog(LOG_INFO, "Couldn't open card CTL: %s",
-				snd_strerror(ret));
+			     snd_strerror(ret));
 			snd_ctl_close(card_ctl);
 			continue;
 		}
@@ -125,8 +130,9 @@ static void alsa_device_list(obs_property_t *prop)
 			char *description;
 
 			if ((ret = snd_ctl_pcm_next_device(card_ctl, &device))) {
-				blog(LOG_DEBUG, "Unable to find next device: %s",
-					snd_strerror(ret));
+				blog(LOG_DEBUG,
+				     "Unable to find next device: %s",
+				     snd_strerror(ret));
 				break;
 			}
 
@@ -134,24 +140,25 @@ static void alsa_device_list(obs_property_t *prop)
 				break;
 
 			snd_pcm_info_set_device(pcm_info, device);
-			snd_pcm_info_set_stream(pcm_info, SND_PCM_STREAM_CAPTURE);
+			snd_pcm_info_set_stream(pcm_info,
+						SND_PCM_STREAM_CAPTURE);
 			if (snd_ctl_pcm_info(card_ctl, pcm_info))
 				continue;
 
 			card_name = snd_ctl_card_info_get_name(card_info);
 			pcm_name = snd_pcm_info_get_name(pcm_info);
 			snprintf(device_str, sizeof(device_str),
-				"plughw:%i,%i", card, device);
+				 "plughw:%i,%i", card, device);
 
 			description = bzalloc(strlen(card_name) +
-				strlen(pcm_name) + strlen(device_str) + 10);
+						  strlen(pcm_name) +
+						  strlen(device_str) + 10);
 
 			sprintf(description, "%s (%s, %s)",
 				device_str, card_name, pcm_name);
 
-			obs_property_list_add_string(prop,
-					description,
-					(void *)device_str);
+			obs_property_list_add_string(prop, description,
+						     (void *)device_str);
 			bfree(description);
 		}
 
@@ -164,10 +171,13 @@ static obs_properties_t *alsa_properties(void *unused)
 	UNUSED_PARAMETER(unused);
 
 	obs_properties_t *props = obs_properties_create();
-	obs_property_t *devices = obs_properties_add_list(props, "pcm_name",
-		obs_module_text("Device"), OBS_COMBO_TYPE_LIST,
-		OBS_COMBO_FORMAT_STRING);
-	obs_properties_add_bool(props, "force_mono", obs_module_text("Force Mono"));
+	obs_property_t *devices = obs_properties_add_list(props,
+				    "pcm_name",
+				    obs_module_text("Device"),
+				    OBS_COMBO_TYPE_LIST,
+				    OBS_COMBO_FORMAT_STRING);
+	obs_properties_add_bool(props, "force_mono",
+				obs_module_text("Force Mono"));
 
 	alsa_device_list(devices);
 
@@ -186,20 +196,20 @@ static int alsa_handle_xrun(snd_pcm_t *pcm)
 {
 	int ret;
 
-	switch(snd_pcm_state(pcm)) {
-		case SND_PCM_STATE_SUSPENDED:
-			while ((ret = snd_pcm_resume(pcm)) == -EAGAIN)
-				sleep(1);
-			if (ret >= 0)
-				break;
-		case SND_PCM_STATE_XRUN:
-			ret = snd_pcm_prepare(pcm);
-			CHECK_RETURN("XRUN: Error handling XRUN");
+	switch (snd_pcm_state(pcm)) {
+	case SND_PCM_STATE_SUSPENDED:
+		while ((ret = snd_pcm_resume(pcm)) == -EAGAIN)
+			sleep(1);
+		if (ret >= 0)
 			break;
+	case SND_PCM_STATE_XRUN:
+		ret = snd_pcm_prepare(pcm);
+		CHECK_RETURN("XRUN: Error handling XRUN");
+		break;
 		/* arecord also handles SND_PCM_STATE_DRAINING */
-		default:
-			blog(LOG_ERROR, "XRUN: Unhandled state.");
-			return -1;
+	default:
+		blog(LOG_ERROR, "XRUN: Unhandled state.");
+		return -1;
 	}
 	return 0;
 }
@@ -227,8 +237,7 @@ static void *alsa_thread(void *vptr)
 	int ret;
 
 	if ((ret = snd_pcm_start(data->pcm)) < 0) {
-		blog(LOG_ERROR, "Not able to start PCM: %s",
-			snd_strerror(ret));
+		blog(LOG_ERROR, "Not able to start PCM: %s", snd_strerror(ret));
 		return NULL;
 	}
 
@@ -262,13 +271,15 @@ static void *alsa_thread(void *vptr)
 			snd_pcm_mmap_begin(data->pcm, &areas, &offset, &frames);
 
 			obs_audio.frames    = frames;
-			obs_audio.timestamp = get_audio_sample_time(frames + delay,
-								    data->sample_rate);
+			obs_audio.timestamp = get_audio_sample_time(
+						frames + delay,
+						data->sample_rate);
 			for (int ch = 0; ch < data->channels; ch++) {
-				int first = areas[ch].first / 8;
+				int first  = areas[ch].first / 8;
 				int stride = areas[ch].step / 8;
 
-				obs_audio.data[ch] = areas[ch].addr + first + offset * stride;
+				obs_audio.data[ch] = areas[ch].addr + first +
+							 offset * stride;
 			}
 			obs_source_output_audio(data->source, &obs_audio);
 
@@ -293,21 +304,25 @@ int alsa_set_hwparams(snd_pcm_t *pcm, struct alsa_data *data)
 
 	ret = snd_pcm_hw_params_any(pcm, params);
 	CHECK_RETURN("No hwparams available");
-	ret = snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_MMAP_NONINTERLEAVED);
+	ret = snd_pcm_hw_params_set_access(pcm, params,
+					   SND_PCM_ACCESS_MMAP_NONINTERLEAVED);
 	CHECK_RETURN("Unable to set access type");
 	ret = snd_pcm_hw_params_set_format(pcm, params, data->format);
 	CHECK_RETURN("Unable to set PCM format");
 	ret = snd_pcm_hw_params_set_channels(pcm, params, data->channels);
 	CHECK_RETURN("Unable to set channels");
-	ret = snd_pcm_hw_params_set_rate_near(pcm, params, &data->sample_rate, 0);
+	ret = snd_pcm_hw_params_set_rate_near(pcm, params,
+					      &data->sample_rate, 0);
 	CHECK_RETURN("Unable to set sample rate");
 	snd_pcm_hw_params_get_buffer_time_max(params, &buffer_time, 0);
 	buffer_time = OBS_MIN(buffer_time, MAX_BUFFER_TIME_US);
 	snd_pcm_hw_params_get_period_time_min(params, &period_time, 0);
 	period_time = OBS_MAX(period_time, buffer_time / 4);
-	ret = snd_pcm_hw_params_set_buffer_time_near(pcm, params, &buffer_time, 0);
+	ret = snd_pcm_hw_params_set_buffer_time_near(pcm, params,
+						     &buffer_time, 0);
 	CHECK_RETURN("Unable to set buffer time");
-	ret = snd_pcm_hw_params_set_period_time_near(pcm, params, &period_time, 0);
+	ret = snd_pcm_hw_params_set_period_time_near(pcm, params,
+						     &period_time, 0);
 	CHECK_RETURN("Unable to set period time");
 	snd_pcm_hw_params_get_period_size(params, &data->period_size, 0);
 	snd_pcm_hw_params_get_buffer_size(params, &data->buffer_size);
@@ -328,10 +343,10 @@ static bool alsa_init(struct alsa_data *data)
 
 	/* Initialize and start thread */
 	blog(LOG_INFO, "Attempting to open PCM (%s)", data->device);
-	ret = snd_pcm_open(&data->pcm, data->device, SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
+	ret = snd_pcm_open(&data->pcm, data->device,
+			   SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
 	if (ret < 0) {
-		blog(LOG_ERROR, "Unable to open PCM: %s",
-			snd_strerror(ret));
+		blog(LOG_ERROR, "Unable to open PCM: %s", snd_strerror(ret));
 		return false;
 	}
 
