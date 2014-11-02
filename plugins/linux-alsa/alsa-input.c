@@ -97,19 +97,10 @@ static void alsa_device_list(obs_property_t *prop)
 	snd_ctl_card_info_alloca(&card_info);
 	snd_pcm_info_alloca(&pcm_info);
 
-	while (1) {
+	while (!snd_card_next(&card) && card >= 0) {
 		char device_str[32];
 		snd_ctl_t *card_ctl;
 		int device = -1;
-
-		if ((ret = snd_card_next(&card))) {
-			blog(LOG_ERROR, "Unable to get next card: %s",
-			     snd_strerror(ret));
-			break;
-		}
-
-		if (card < 0)
-			break;
 
 		snprintf(device_str, sizeof(device_str), "hw:%i", card);
 		if ((ret = snd_ctl_open(&card_ctl, device_str, 0))) {
@@ -125,19 +116,10 @@ static void alsa_device_list(obs_property_t *prop)
 			continue;
 		}
 
-		while (1) {
+		while (!snd_ctl_pcm_next_device(card_ctl, &device) &&
+				device >= 0) {
 			const char *pcm_name, *card_name;
 			char *description;
-
-			if ((ret = snd_ctl_pcm_next_device(card_ctl, &device))) {
-				blog(LOG_DEBUG,
-				     "Unable to find next device: %s",
-				     snd_strerror(ret));
-				break;
-			}
-
-			if (device < 0)
-				break;
 
 			snd_pcm_info_set_device(pcm_info, device);
 			snd_pcm_info_set_stream(pcm_info,
